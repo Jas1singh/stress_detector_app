@@ -25,7 +25,7 @@ class VideoTransformer(VideoTransformerBase):
         dominant_emotion = "Neutral"
         if result:
             emotions = result[0]["emotions"]
-            stress_score = emotions["angry"] + emotions["fear"] + emotions["sad"]
+            stress_score = emotions.get("angry", 0) + emotions.get("fear", 0) + emotions.get("sad", 0)
             dominant_emotion = max(emotions, key=emotions.get)
         
         # Add stress to history
