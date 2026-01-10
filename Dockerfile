@@ -4,7 +4,7 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required by OpenCV
+# Install system dependencies required by OpenCV and Streamlit
 RUN apt-get update && \
     apt-get install -y libgl1 libglib2.0-0 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
@@ -24,5 +24,5 @@ COPY . .
 # Expose Streamlit port
 EXPOSE 10000
 
-# Run Streamlit
-CMD ["streamlit", "run", "app.py", "--server.port=10000", "--server.address=0.0.0.0"]
+# Run Streamlit using your filename
+CMD ["streamlit", "run", "stress_detector_app.py", "--server.port=10000", "--server.address=0.0.0.0"]
