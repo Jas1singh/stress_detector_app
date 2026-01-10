@@ -10,7 +10,10 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow INFO/WARNING logs
 
 import streamlit as st
 import cv2
-cv2.utils.logging.setLogLevel(cv2.utils.logging.ERROR)
+
+# Version-safe OpenCV log suppression
+if hasattr(cv2, "setLogLevel"):
+    cv2.setLogLevel(cv2.LOG_LEVEL_ERROR)
 
 import numpy as np
 from fer import FER
@@ -35,7 +38,7 @@ st.write("Detect stress from facial expressions using your webcam or an uploaded
 # -----------------------------
 # Initialize FER detector
 # -----------------------------
-detector = FER(mtcnn=False)  # more stable in headless/cloud environments
+detector = FER(mtcnn=False)  # stable in headless/cloud environments
 
 # -----------------------------
 # Stress history (for graph)
