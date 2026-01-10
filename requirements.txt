@@ -1,9 +1,7 @@
-streamlit==1.26.0
+streamlit==1.29.0
+streamlit-webrtc==0.47.0
 opencv-python-headless==4.8.1.78
-fer==22.4.0
-numpy==1.24.4
-streamlit-webrtc==0.47.1
-mtcnn==0.1.1
-tensorflow-cpu==2.13.0
-av==10.0.0
-protobuf==3.20.3
+fer==22.5.1
+tensorflow-cpu==2.12.0
+numpy
+av
