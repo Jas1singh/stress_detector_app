@@ -1,5 +1,17 @@
+# -----------------------------
+# stress_detector_app.py
+# -----------------------------
+
+import os
+# -----------------------------
+# Suppress TensorFlow and OpenCV logs
+# -----------------------------
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow INFO/WARNING logs
+
 import streamlit as st
 import cv2
+cv2.utils.logging.setLogLevel(cv2.utils.logging.ERROR)
+
 import numpy as np
 from fer import FER
 from collections import deque
@@ -18,67 +30,56 @@ st.set_page_config(
 )
 
 st.title("Real-Time Stress Detector 💛")
-st.write("Detect stress from facial expressions using your webcam.")
+st.write("Detect stress from facial expressions using your webcam or an uploaded image.")
 
 # -----------------------------
 # Initialize FER detector
 # -----------------------------
-# mtcnn=False is more stable in Docker / headless environment
-detector = FER(mtcnn=False)
+detector = FER(mtcnn=False)  # more stable in headless/cloud environments
 
 # -----------------------------
-# Stress history
+# Stress history (for graph)
 # -----------------------------
 MAX_POINTS = 50
 if "stress_history" not in st.session_state:
     st.session_state.stress_history = deque([0]*MAX_POINTS, maxlen=MAX_POINTS)
 
 # -----------------------------
-# WebRTC config
+# Helper function: calculate stress
 # -----------------------------
-RTC_CONFIGURATION = RTCConfiguration(
-    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-)
+def calculate_stress(img):
+    results = detector.detect_emotions(img)
+    stress_score = 0
+    dominant_emotion = "Neutral"
 
-# -----------------------------
-# Video Transformer
-# -----------------------------
-class VideoTransformer(VideoTransformerBase):
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        results = detector.detect_emotions(img)
+    if results:
+        stress_values = []
+        for face in results:
+            emotions = face["emotions"]
+            # Weighted stress score
+            stress = 0.4*emotions["angry"] + 0.35*emotions["fear"] + 0.25*emotions["sad"]
+            stress_values.append(stress)
+            dominant_emotion = max(emotions, key=emotions.get)
+        stress_score = np.mean(stress_values)
 
-        stress_score = 0
-        dominant_emotion = "Neutral"
+    # Normalize to 0-100
+    stress_score = min(int(stress_score*100), 100)
+    st.session_state.stress_history.append(stress_score)
+    smooth_stress = int(np.mean(st.session_state.stress_history))
 
-        if results:
-            stress_values = []
-            for face in results:
-                emotions = face["emotions"]
-                # Weighted stress calculation
-                stress = 0.4*emotions["angry"] + 0.35*emotions["fear"] + 0.25*emotions["sad"]
-                stress_values.append(stress)
-                dominant_emotion = max(emotions, key=emotions.get)
-            stress_score = np.mean(stress_values)
+    # Stress level
+    if smooth_stress > 70:
+        level = "High Stress"
+        color = (0,0,255)
+    elif smooth_stress > 40:
+        level = "Moderate Stress"
+        color = (0,165,255)
+    else:
+        level = "Low Stress"
+        color = (0,255,0)
 
-        # Normalize and smooth
-        stress_score = min(int(stress_score*100), 100)
-        history = st.session_state.stress_history
-        history.append(stress_score)
-        smooth_stress = int(np.mean(history))
-
-        # Determine stress level
-        if smooth_stress > 70:
-            level = "High Stress"
-            color = (0,0,255)
-        elif smooth_stress > 40:
-            level = "Moderate Stress"
-            color = (0,165,255)
-        else:
-            level = "Low Stress"
-            color = (0,255,0)
-
-        # Draw text on video
+    # Draw text on frame if image is colored
+    if img.ndim == 3:
         cv2.putText(
             img,
             f"{dominant_emotion} | Stress: {smooth_stress}% ({level})",
@@ -89,21 +90,50 @@ class VideoTransformer(VideoTransformerBase):
             2
         )
 
-        return img
+    return img, smooth_stress, level, dominant_emotion
 
 # -----------------------------
-# Start WebRTC webcam stream
+# Mode selection
 # -----------------------------
-webrtc_streamer(
-    key="stress-detector",
-    video_processor_factory=VideoTransformer,  # updated for v0.47+
-    rtc_configuration=RTC_CONFIGURATION,
-    media_stream_constraints={"video": True, "audio": False},
-    async_processing=True,
-)
+st.sidebar.subheader("Mode selection")
+mode = st.sidebar.radio("Choose input method:", ["Webcam (local only)", "Upload Image"])
 
 # -----------------------------
-# Display stress trend chart
+# Webcam mode
+# -----------------------------
+if mode == "Webcam (local only)":
+    RTC_CONFIGURATION = RTCConfiguration(
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
+
+    class VideoTransformer(VideoTransformerBase):
+        def transform(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            img, _, _, _ = calculate_stress(img)
+            return img
+
+    webrtc_streamer(
+        key="stress-detector",
+        video_processor_factory=VideoTransformer,
+        rtc_configuration=RTC_CONFIGURATION,
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+    )
+
+# -----------------------------
+# Upload Image mode (cloud)
+# -----------------------------
+else:
+    uploaded_file = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
+    if uploaded_file is not None:
+        file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        processed_img, stress, level, emotion = calculate_stress(img)
+        st.image(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB), caption=f"{level} | {stress}% | {emotion}")
+        st.success(f"Detected Stress: {stress}% ({level}), Dominant Emotion: {emotion}")
+
+# -----------------------------
+# Stress trend chart
 # -----------------------------
 st.subheader("Stress Trend")
 st.line_chart(list(st.session_state.stress_history))
