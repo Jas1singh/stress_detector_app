@@ -4,17 +4,15 @@
 
 import os
 # -----------------------------
-# Suppress TensorFlow and OpenCV logs
+# Suppress TensorFlow logs
 # -----------------------------
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow INFO/WARNING logs
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)  # suppress OpenCV headless warnings
 
 import streamlit as st
 import cv2
-
-# Version-safe OpenCV log suppression
-if hasattr(cv2, "setLogLevel"):
-    cv2.setLogLevel(cv2.LOG_LEVEL_ERROR)
-
 import numpy as np
 from fer import FER
 from collections import deque
