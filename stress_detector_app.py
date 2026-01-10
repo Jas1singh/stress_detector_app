@@ -9,42 +9,25 @@ from streamlit_webrtc import (
     RTCConfiguration
 )
 
-# -------------------------------
-# Streamlit page config
-# -------------------------------
-st.set_page_config(
-    page_title="Real-Time Stress Detector",
-    layout="centered"
-)
+st.set_page_config(page_title="Real-Time Stress Detector", layout="centered")
 
 st.title("Real-Time Stress Detector 💛")
 st.write("Detect stress from facial expressions using your webcam.")
 
-# -------------------------------
-# Initialize FER detector
-# (mtcnn=False for Render stability)
-# -------------------------------
+# Initialize FER detector (mtcnn=False for stability)
 detector = FER(mtcnn=False)
 
-# -------------------------------
 # Session-safe stress history
-# -------------------------------
 MAX_POINTS = 50
 if "stress_history" not in st.session_state:
-    st.session_state.stress_history = deque(
-        [0] * MAX_POINTS, maxlen=MAX_POINTS
-    )
+    st.session_state.stress_history = deque([0]*MAX_POINTS, maxlen=MAX_POINTS)
 
-# -------------------------------
-# WebRTC configuration (important)
-# -------------------------------
+# WebRTC configuration
 RTC_CONFIGURATION = RTCConfiguration(
     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
 
-# -------------------------------
-# Video Transformer
-# -------------------------------
+# Video transformer class
 class VideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
@@ -55,57 +38,43 @@ class VideoTransformer(VideoTransformerBase):
 
         if results:
             stress_values = []
-
             for face in results:
                 emotions = face["emotions"]
-
-                # Weighted stress calculation
-                stress = (
-                    0.4 * emotions["angry"] +
-                    0.35 * emotions["fear"] +
-                    0.25 * emotions["sad"]
-                )
+                stress = 0.4*emotions["angry"] + 0.35*emotions["fear"] + 0.25*emotions["sad"]
                 stress_values.append(stress)
-
                 dominant_emotion = max(emotions, key=emotions.get)
-
             stress_score = np.mean(stress_values)
 
-        # Normalize stress to 0–100
-        stress_score = min(int(stress_score * 100), 100)
-
-        # Smooth stress using moving average
+        # Normalize and smooth
+        stress_score = min(int(stress_score*100), 100)
         history = st.session_state.stress_history
         history.append(stress_score)
         smooth_stress = int(np.mean(history))
 
-        # Stress level label
+        # Stress level
         if smooth_stress > 70:
             level = "High Stress"
-            color = (0, 0, 255)
+            color = (0,0,255)
         elif smooth_stress > 40:
             level = "Moderate Stress"
-            color = (0, 165, 255)
+            color = (0,165,255)
         else:
             level = "Low Stress"
-            color = (0, 255, 0)
+            color = (0,255,0)
 
-        # Draw text on video
+        # Draw on video
         cv2.putText(
             img,
             f"{dominant_emotion} | Stress: {smooth_stress}% ({level})",
-            (30, 50),
+            (30,50),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
             color,
             2
         )
-
         return img
 
-# -------------------------------
-# Start Webcam Stream
-# -------------------------------
+# Start webcam stream
 webrtc_streamer(
     key="stress-detector",
     video_transformer_factory=VideoTransformer,
@@ -114,19 +83,10 @@ webrtc_streamer(
     async_processing=True,
 )
 
-# -------------------------------
-# Stress Trend Graph
-# -------------------------------
+# Stress trend graph
 st.subheader("Stress Trend")
 st.line_chart(list(st.session_state.stress_history))
 
-# -------------------------------
-# Footer
-# -------------------------------
 st.markdown(
-    """
-    **Note:**  
-    This system estimates stress based on facial emotion recognition  
-    (anger, fear, sadness) and should not be used for medical diagnosis.
-    """
+    "**Note:** This estimates stress from facial emotions and is not medical advice."
 )
