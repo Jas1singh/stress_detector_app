@@ -9,25 +9,40 @@ from streamlit_webrtc import (
     RTCConfiguration
 )
 
-st.set_page_config(page_title="Real-Time Stress Detector", layout="centered")
+# -----------------------------
+# Streamlit page config
+# -----------------------------
+st.set_page_config(
+    page_title="Real-Time Stress Detector",
+    layout="centered"
+)
 
 st.title("Real-Time Stress Detector 💛")
 st.write("Detect stress from facial expressions using your webcam.")
 
-# Initialize FER detector (mtcnn=False for stability)
+# -----------------------------
+# Initialize FER detector
+# -----------------------------
+# mtcnn=False is more stable in Docker / headless environment
 detector = FER(mtcnn=False)
 
-# Session-safe stress history
+# -----------------------------
+# Stress history
+# -----------------------------
 MAX_POINTS = 50
 if "stress_history" not in st.session_state:
     st.session_state.stress_history = deque([0]*MAX_POINTS, maxlen=MAX_POINTS)
 
-# WebRTC configuration
+# -----------------------------
+# WebRTC config
+# -----------------------------
 RTC_CONFIGURATION = RTCConfiguration(
     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
 
-# Video transformer class
+# -----------------------------
+# Video Transformer
+# -----------------------------
 class VideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
@@ -40,6 +55,7 @@ class VideoTransformer(VideoTransformerBase):
             stress_values = []
             for face in results:
                 emotions = face["emotions"]
+                # Weighted stress calculation
                 stress = 0.4*emotions["angry"] + 0.35*emotions["fear"] + 0.25*emotions["sad"]
                 stress_values.append(stress)
                 dominant_emotion = max(emotions, key=emotions.get)
@@ -51,7 +67,7 @@ class VideoTransformer(VideoTransformerBase):
         history.append(stress_score)
         smooth_stress = int(np.mean(history))
 
-        # Stress level
+        # Determine stress level
         if smooth_stress > 70:
             level = "High Stress"
             color = (0,0,255)
@@ -62,7 +78,7 @@ class VideoTransformer(VideoTransformerBase):
             level = "Low Stress"
             color = (0,255,0)
 
-        # Draw on video
+        # Draw text on video
         cv2.putText(
             img,
             f"{dominant_emotion} | Stress: {smooth_stress}% ({level})",
@@ -72,18 +88,23 @@ class VideoTransformer(VideoTransformerBase):
             color,
             2
         )
+
         return img
 
-# Start webcam stream
+# -----------------------------
+# Start WebRTC webcam stream
+# -----------------------------
 webrtc_streamer(
     key="stress-detector",
-    video_transformer_factory=VideoTransformer,
+    video_processor_factory=VideoTransformer,  # updated for v0.47+
     rtc_configuration=RTC_CONFIGURATION,
     media_stream_constraints={"video": True, "audio": False},
     async_processing=True,
 )
 
-# Stress trend graph
+# -----------------------------
+# Display stress trend chart
+# -----------------------------
 st.subheader("Stress Trend")
 st.line_chart(list(st.session_state.stress_history))
 
