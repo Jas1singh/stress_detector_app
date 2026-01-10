@@ -1,44 +1,132 @@
 import streamlit as st
 import cv2
-from fer import FER
 import numpy as np
+from fer import FER
 from collections import deque
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+from streamlit_webrtc import (
+    webrtc_streamer,
+    VideoTransformerBase,
+    RTCConfiguration
+)
 
-# Initialize FER detector
-detector = FER(mtcnn=True)
-
-# Deque to store stress history
-max_points = 50
-stress_history = deque([0]*max_points, maxlen=max_points)
+# -------------------------------
+# Streamlit page config
+# -------------------------------
+st.set_page_config(
+    page_title="Real-Time Stress Detector",
+    layout="centered"
+)
 
 st.title("Real-Time Stress Detector 💛")
-st.write("Detect stress from facial expressions in real-time using your webcam.")
+st.write("Detect stress from facial expressions using your webcam.")
 
-# Video transformer class for Streamlit
+# -------------------------------
+# Initialize FER detector
+# (mtcnn=False for Render stability)
+# -------------------------------
+detector = FER(mtcnn=False)
+
+# -------------------------------
+# Session-safe stress history
+# -------------------------------
+MAX_POINTS = 50
+if "stress_history" not in st.session_state:
+    st.session_state.stress_history = deque(
+        [0] * MAX_POINTS, maxlen=MAX_POINTS
+    )
+
+# -------------------------------
+# WebRTC configuration (important)
+# -------------------------------
+RTC_CONFIGURATION = RTCConfiguration(
+    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
+
+# -------------------------------
+# Video Transformer
+# -------------------------------
 class VideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
-        result = detector.detect_emotions(img)
-        
+        results = detector.detect_emotions(img)
+
         stress_score = 0
         dominant_emotion = "Neutral"
-        if result:
-            emotions = result[0]["emotions"]
-            stress_score = emotions.get("angry", 0) + emotions.get("fear", 0) + emotions.get("sad", 0)
-            dominant_emotion = max(emotions, key=emotions.get)
-        
-        # Add stress to history
-        stress_history.append(stress_score)
-        
-        # Draw info on frame
-        cv2.putText(img, f"{dominant_emotion} Stress: {stress_score:.2f}",
-                    (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-        
+
+        if results:
+            stress_values = []
+
+            for face in results:
+                emotions = face["emotions"]
+
+                # Weighted stress calculation
+                stress = (
+                    0.4 * emotions["angry"] +
+                    0.35 * emotions["fear"] +
+                    0.25 * emotions["sad"]
+                )
+                stress_values.append(stress)
+
+                dominant_emotion = max(emotions, key=emotions.get)
+
+            stress_score = np.mean(stress_values)
+
+        # Normalize stress to 0–100
+        stress_score = min(int(stress_score * 100), 100)
+
+        # Smooth stress using moving average
+        history = st.session_state.stress_history
+        history.append(stress_score)
+        smooth_stress = int(np.mean(history))
+
+        # Stress level label
+        if smooth_stress > 70:
+            level = "High Stress"
+            color = (0, 0, 255)
+        elif smooth_stress > 40:
+            level = "Moderate Stress"
+            color = (0, 165, 255)
+        else:
+            level = "Low Stress"
+            color = (0, 255, 0)
+
+        # Draw text on video
+        cv2.putText(
+            img,
+            f"{dominant_emotion} | Stress: {smooth_stress}% ({level})",
+            (30, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            color,
+            2
+        )
+
         return img
 
-# Start webcam stream
-webrtc_streamer(key="example", video_transformer_factory=VideoTransformer)
+# -------------------------------
+# Start Webcam Stream
+# -------------------------------
+webrtc_streamer(
+    key="stress-detector",
+    video_transformer_factory=VideoTransformer,
+    rtc_configuration=RTC_CONFIGURATION,
+    media_stream_constraints={"video": True, "audio": False},
+    async_processing=True,
+)
 
-# Show stress graph
-st.line_chart(list(stress_history))
+# -------------------------------
+# Stress Trend Graph
+# -------------------------------
+st.subheader("Stress Trend")
+st.line_chart(list(st.session_state.stress_history))
+
+# -------------------------------
+# Footer
+# -------------------------------
+st.markdown(
+    """
+    **Note:**  
+    This system estimates stress based on facial emotion recognition  
+    (anger, fear, sadness) and should not be used for medical diagnosis.
+    """
+)
