@@ -178,8 +178,8 @@ else:
 
     demo_images = {
         "Low Stress": "assets/calm.jpg",
-        "Moderate Stress": "assets/moderate.jpg",
-        "High Stress": "assets/stressed.jpg"
+        "Moderate Stress": "assets/moderate.jpeg",
+        "High Stress": "assets/stressed.jpeg"
     }
 
     img = cv2.imread(demo_images[demo_choice])
