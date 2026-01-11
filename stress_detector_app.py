@@ -9,12 +9,11 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning)  # suppress OpenCV headless warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 import streamlit as st
 import cv2
 import numpy as np
-from fer import FER
 from collections import deque
 from streamlit_webrtc import (
     webrtc_streamer,
@@ -34,16 +33,21 @@ st.title("Real-Time Stress Detector 💛")
 st.write("Detect stress from facial expressions using your webcam or an uploaded image.")
 
 # -----------------------------
-# Initialize FER detector
+# Cached FER detector (CRITICAL)
 # -----------------------------
-detector = FER(mtcnn=False)  # stable in headless/cloud environments
+@st.cache_resource
+def load_detector():
+    from fer import FER
+    return FER(mtcnn=False)  # faster & more stable on Render
+
+detector = load_detector()
 
 # -----------------------------
 # Stress history (for graph)
 # -----------------------------
 MAX_POINTS = 50
 if "stress_history" not in st.session_state:
-    st.session_state.stress_history = deque([0]*MAX_POINTS, maxlen=MAX_POINTS)
+    st.session_state.stress_history = deque([0] * MAX_POINTS, maxlen=MAX_POINTS)
 
 # -----------------------------
 # Helper function: calculate stress
@@ -57,38 +61,44 @@ def calculate_stress(img):
         stress_values = []
         for face in results:
             emotions = face["emotions"]
-            # Weighted stress score
-            stress = 0.4*emotions["angry"] + 0.35*emotions["fear"] + 0.25*emotions["sad"]
+
+            stress = (
+                0.4 * emotions.get("angry", 0) +
+                0.35 * emotions.get("fear", 0) +
+                0.25 * emotions.get("sad", 0)
+            )
             stress_values.append(stress)
             dominant_emotion = max(emotions, key=emotions.get)
+
         stress_score = np.mean(stress_values)
 
-    # Normalize to 0-100
-    stress_score = min(int(stress_score*100), 100)
+    # Normalize to 0–100
+    stress_score = min(int(stress_score * 100), 100)
     st.session_state.stress_history.append(stress_score)
     smooth_stress = int(np.mean(st.session_state.stress_history))
 
     # Stress level
     if smooth_stress > 70:
         level = "High Stress"
-        color = (0,0,255)
+        color = (0, 0, 255)
     elif smooth_stress > 40:
         level = "Moderate Stress"
-        color = (0,165,255)
+        color = (0, 165, 255)
     else:
         level = "Low Stress"
-        color = (0,255,0)
+        color = (0, 255, 0)
 
-    # Draw text on frame if image is colored
+    # Draw overlay
     if img.ndim == 3:
         cv2.putText(
             img,
             f"{dominant_emotion} | Stress: {smooth_stress}% ({level})",
-            (30,50),
+            (20, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
-            1,
+            0.9,
             color,
-            2
+            2,
+            cv2.LINE_AA
         )
 
     return img, smooth_stress, level, dominant_emotion
@@ -96,13 +106,17 @@ def calculate_stress(img):
 # -----------------------------
 # Mode selection
 # -----------------------------
-st.sidebar.subheader("Mode selection")
-mode = st.sidebar.radio("Choose input method:", ["Webcam (local only)", "Upload Image"])
+st.sidebar.subheader("Mode Selection")
+mode = st.sidebar.radio(
+    "Choose input method:",
+    ["Webcam (local only)", "Upload Image"]
+)
 
 # -----------------------------
-# Webcam mode
+# Webcam mode (local browsers)
 # -----------------------------
 if mode == "Webcam (local only)":
+
     RTC_CONFIGURATION = RTCConfiguration(
         {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     )
@@ -122,16 +136,28 @@ if mode == "Webcam (local only)":
     )
 
 # -----------------------------
-# Upload Image mode (cloud)
+# Upload Image mode (cloud-safe)
 # -----------------------------
 else:
-    uploaded_file = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
+    uploaded_file = st.file_uploader(
+        "Upload an image",
+        type=["jpg", "jpeg", "png"]
+    )
+
     if uploaded_file is not None:
         file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
         processed_img, stress, level, emotion = calculate_stress(img)
-        st.image(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB), caption=f"{level} | {stress}% | {emotion}")
-        st.success(f"Detected Stress: {stress}% ({level}), Dominant Emotion: {emotion}")
+
+        st.image(
+            cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB),
+            caption=f"{level} | {stress}% | {emotion}"
+        )
+
+        st.success(
+            f"Detected Stress: {stress}% ({level}) | Dominant Emotion: {emotion}"
+        )
 
 # -----------------------------
 # Stress trend chart
@@ -139,6 +165,10 @@ else:
 st.subheader("Stress Trend")
 st.line_chart(list(st.session_state.stress_history))
 
+# -----------------------------
+# Disclaimer
+# -----------------------------
 st.markdown(
-    "**Note:** This estimates stress from facial emotions and is not medical advice."
+    "**Disclaimer:** This application estimates stress from facial expressions "
+    "and is **not medical advice**."
 )
